@@ -20,7 +20,7 @@ const char *clientId = "esp32remote1";
 const char *mqttServer = "marvin.home";
 
 const int msgSize = 64;
-const int topicSize = 128;
+const int topicSize = 512;
 const int mqttBufferSize = 4096;
 
 char mqttInMessage[msgSize];
@@ -35,16 +35,12 @@ String strMqttOutTopic;
 String strMqttOutMsg;
 
 // Topics
-const char *statusTopic = "/robots/remote1/status";
-const char *controlTopic = "/robots/remote1/control";
-const char *availabilityTopic = "/robots/remote1/availability";
-const char *stick1Xtopic = "/robots/remote1/status/stick1x";
-const char *stick1Ytopic = "/robots/remote1/status/stick1x";
-const char *stick2Xtopic = "/robots/remote1/status/stick2x";
-const char *stick2Ytopic = "/robots/remote1/status/stick2y";
-const char *sticksTopic = "/robots/remote1/output/sticks";
-const char *buttonsTopic = "/robots/remote1/output/buttons";
-const char *motorTopic = "/robots/tank1/control/motors";
+const char *statusTopic = "robots/remote1/status";
+const char *controlTopic = "robots/remote1/control";
+const char *availabilityTopic = "robots/remote1/availability";
+const char *sticksTopic = "robots/remote1/output/sticks";
+const char *buttonsTopic = "robots/remote1/output/buttons";
+const char *configTopic = "robots/remote1/config";
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -144,6 +140,7 @@ void setup_wifi()
     ip = WiFi.localIP();
     strThisIP = WiFi.localIP().toString();
     Serial.println(ip);
+    mqttConnect();
 }
 
 void mqttCallback(char *topic, byte *payload, int length)
@@ -174,6 +171,8 @@ void mqttConnect()
     {
         myPublish("Remote 1 esp online from Reconnect");
         myPublish(strThisIP);
+        mqttClient.subscribe(controlTopic);
+        mqttClient.subscribe(configTopic);
     }
     else
     {
