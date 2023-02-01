@@ -244,21 +244,21 @@ void analogReadTask(void *pvParameters)
       knob4 = analogRead(analog4Pin);
     }
     stick1x = mcpAdc.readADC(3);
-    delay(5);
+    delay(1);
     stick1y = mcpAdc.readADC(2);
-    delay(5);
+    delay(1);
     stick2x = mcpAdc.readADC(0);
-    delay(5);
+    delay(1);
     stick2y = mcpAdc.readADC(1);
-    delay(5);
+    delay(1);
     stick3x = mcpAdc.readADC(4);
-    delay(5);
+    delay(1);
     stick3y = mcpAdc.readADC(5);
-    delay(5);
+    delay(1);
     stick4x = mcpAdc.readADC(7);
-    delay(5);
+    delay(1);
     stick4y = mcpAdc.readADC(6);
-    delay(5);
+    delay(1);
     if (stick1x != lastStick1x)
     {
       mappedStick1x = map(stick1x, 0, 1024, 0, 100);
@@ -397,7 +397,6 @@ void analogReadTask(void *pvParameters)
       pubStick4y = false;
     }
     xSemaphoreGive(mqttSemaphore);
-    delay(25);
   }
 }
 
