@@ -261,92 +261,88 @@ void analogReadTask(void *pvParameters)
     delay(1);
     if (stick1x != lastStick1x)
     {
-      mappedStick1x = map(stick1x, 0, 1024, 0, 100);
+      mappedStick1x = map(stick1x, 0, 1023, 0, 99);
       lastStick1x = stick1x;
+      if (mappedStick1x != lastMappedStick1x)
+      {
+        strStickReading1x = mappedStick1x;
+        lastMappedStick1x = mappedStick1x;
+        pubStick1x = true;
+      }
     }
     if (stick1y != lastStick1y)
     {
-      mappedStick1y = map(stick1y, 0, 1024, 0, 100);
+      mappedStick1y = map(stick1y, 0, 1023, 0, 99);
       lastStick1y = stick1y;
+      if (mappedStick1y != lastMappedStick1y)
+      {
+        strStickReading1y = mappedStick1y;
+        lastMappedStick1y = mappedStick1y;
+        pubStick1y = true;
+      }
     }
     if (stick2x != lastStick2x)
     {
-      mappedStick2x = map(stick2x, 0, 1024, 0, 100);
+      mappedStick2x = map(stick2x, 0, 1023, 0, 99);
       lastStick2x = stick2x;
     }
-    if (stick2y != lastStick1y)
+    if (stick2y != lastStick2y)
     {
-      mappedStick2y = map(stick2y, 0, 1024, 0, 100);
+      mappedStick2y = map(stick2y, 0, 1023, 0, 99);
       lastStick2y = stick2y;
+      if (mappedStick2y != lastMappedStick2y)
+      {
+        strStickReading2y = mappedStick2y;
+        lastMappedStick2y = mappedStick2y;
+        pubStick2y = true;
+      }
     }
     if (stick3x != lastStick3x)
     {
-      mappedStick3x = map(stick3x, 0, 1024, 0, 100);
+      mappedStick3x = map(stick3x, 0, 1023, 0, 99);
       lastStick3x = stick3x;
+      if (mappedStick3x != lastMappedStick3x)
+      {
+        strStickReading3x = mappedStick3x;
+        lastMappedStick3x = mappedStick3x;
+        pubStick3x = true;
+      }
     }
     if (stick3y != lastStick3y)
     {
-      mappedStick3y = map(stick3y, 0, 1024, 0, 100);
+      mappedStick3y = map(stick3y, 0, 1023, 0, 99);
       lastStick3y = stick3y;
+
+      if (mappedStick3y != lastMappedStick3y)
+      {
+        strStickReading3y = mappedStick3y;
+        lastMappedStick3y = mappedStick3y;
+        pubStick3y = true;
+      }
     }
     if (stick4x != lastStick4x)
     {
-      mappedStick4x = map(stick4x, 0, 1024, 0, 100);
+      mappedStick4x = map(stick4x, 0, 1023, 0, 99);
       lastStick4x = stick4x;
+      if (mappedStick4x != lastMappedStick4x)
+      {
+        strStickReading4x = mappedStick4x;
+        lastMappedStick4x = mappedStick4x;
+        pubStick4x = true;
+      }
     }
     if (stick4y != lastStick4y)
     {
-      mappedStick4y = map(stick4y, 0, 1024, 0, 100);
+      mappedStick4y = map(stick4y, 0, 1023, 0, 99);
       lastStick4y = stick4y;
+      if (mappedStick4y != lastMappedStick4y)
+      {
+        strStickReading4y = mappedStick4y;
+        lastMappedStick4y = mappedStick4y;
+        pubStick4y = true;
+      }
     }
-    if (mappedStick1x != lastMappedStick1x)
-    {
-      strStickReading1x = mappedStick1x;
-      lastMappedStick1x = mappedStick1x;
-      pubStick1x = true;
-    }
-    if (mappedStick1y != lastMappedStick1y)
-    {
-      strStickReading1y = mappedStick1y;
-      lastMappedStick1y = mappedStick1y;
-      pubStick1y = true;
-    }
-    if (mappedStick2x != lastMappedStick2x)
-    {
-      strStickReading2x = mappedStick2x;
-      lastMappedStick2x = mappedStick2x;
-      pubStick2x = true;
-    }
-    if (mappedStick2y != lastMappedStick2y)
-    {
-      strStickReading2y = mappedStick2y;
-      lastMappedStick2y = mappedStick2y;
-      pubStick2y = true;
-    }
-    if (mappedStick3x != lastMappedStick3x)
-    {
-      strStickReading3x = mappedStick3x;
-      lastMappedStick3x = mappedStick3x;
-      pubStick3x = true;
-    }
-    if (mappedStick3y != lastMappedStick3y)
-    {
-      strStickReading3y = mappedStick3y;
-      lastMappedStick3y = mappedStick3y;
-      pubStick3y = true;
-    }
-    if (mappedStick4x != lastMappedStick4x)
-    {
-      strStickReading4x = mappedStick4x;
-      lastMappedStick4x = mappedStick4x;
-      pubStick4x = true;
-    }
-    if (mappedStick4y != lastMappedStick4y)
-    {
-      strStickReading4y = mappedStick4y;
-      lastMappedStick4y = mappedStick4y;
-      pubStick4y = true;
-    }
+
     xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
     if (pubStick1x)
     {
