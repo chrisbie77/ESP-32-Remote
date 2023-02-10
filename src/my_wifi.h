@@ -6,14 +6,15 @@ char ssid[16];
 const char *password = "csd1977jld1939ejd1938";
 
 String strCurrentSSID;
+String strCurrentRSSI;
 String strThisIP;
 
 IPAddress ip;
 IPAddress local_IP(192, 168, 0, 40);
 IPAddress gateway(192, 168, 0, 254);
 IPAddress subnet(255, 255, 255, 0);
-IPAddress primaryDNS(192, 168, 0, 253); //optional
-IPAddress secondaryDNS(192, 168, 0, 254); //optional
+IPAddress primaryDNS(192, 168, 0, 253);   // optional
+IPAddress secondaryDNS(192, 168, 0, 254); // optional
 
 // mqtt setup
 const char *clientId = "esp32remote1";
@@ -34,13 +35,17 @@ String strMqttMessage;
 String strMqttOutTopic;
 String strMqttOutMsg;
 
+
 // Topics
 const char *statusTopic = "robots/remote1/status";
 const char *controlTopic = "robots/remote1/control";
 const char *availabilityTopic = "robots/remote1/availability";
 const char *sticksTopic = "robots/remote1/output/sticks";
 const char *buttonsTopic = "robots/remote1/output/buttons";
+const char *knobsTopic = "robots/remote1/output/knobs";
 const char *configTopic = "robots/remote1/config";
+const char *beaconTopic = "robots/remote1/beacon";
+const char *batteryTopic = "robots/remote1/battery";
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -63,7 +68,6 @@ void myPublish(const char message[msgSize]);
 void myPublish(long int message);
 void myPublish(int message);
 void myPublish(String message);
-
 
 void scan_wifi()
 {
@@ -140,6 +144,9 @@ void setup_wifi()
     ip = WiFi.localIP();
     strThisIP = WiFi.localIP().toString();
     Serial.println(ip);
+    strCurrentRSSI = WiFi.RSSI();
+    strCurrentSSID = WiFi.SSID();
+    delay(1000);
     mqttConnect();
 }
 
@@ -167,18 +174,22 @@ void mqttConnect()
     mqttClient.setServer(mqttServer, 1883);
     mqttClient.setCallback(mqttCallback);
     mqttClient.setBufferSize(mqttBufferSize);
-    if (mqttClient.connect(clientId, statusTopic, 1, true, "offline"))
+    while (!mqttClient.connected())
     {
-        myPublish("Remote 1 esp online from Reconnect");
-        myPublish(strThisIP);
-        mqttClient.subscribe(controlTopic);
-        mqttClient.subscribe(configTopic);
-    }
-    else
-    {
-        Serial.print("mqtt failed, rc=");
-        Serial.println(mqttClient.state());
-        delay(2000);
+        if (mqttClient.connect(clientId, statusTopic, 1, true, "offline"))
+        {
+            myPublish("online");
+            myPublish("Remote 1 esp online from Reconnect");
+            myPublish(strThisIP);
+            mqttClient.subscribe(controlTopic);
+            mqttClient.subscribe(configTopic);
+        }
+        else
+        {
+            Serial.print("mqtt failed, rc=");
+            Serial.println(mqttClient.state());
+            delay(1000);
+        }
     }
 }
 

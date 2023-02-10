@@ -3,15 +3,19 @@
 //
 #include <RTOS.h>
 #include <Arduino.h>
-#include <my_wifi.h>
 #include <ezButton.h>
 #include <U8g2lib.h>
 #include <my_esp32_ota.h>
 #include <Adafruit_MCP3008.h>
+#include <TaskScheduler.h>
+#include <NeoPixelBrightnessBus.h> 
 #include <SPI.h>
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
+#include <my_wifi.h>
+
+#define colorSaturation 128
 #define APP_CPU 1
 #define PRO_CPU 0
 
@@ -20,18 +24,21 @@ const uint16_t button2Pin = 14;
 const uint16_t button3Pin = 27;
 const uint16_t button4Pin = 26;
 const uint16_t button5Pin = 25;
-const uint16_t button6Pin = 33;
-const uint16_t button7Pin = 32;
+const uint16_t button6Pin = 32;
+const uint16_t button7Pin = 33;
 const uint16_t button8Pin = 4;
 const uint16_t button9Pin = 0;
 const uint16_t button10Pin = 2;
 const uint16_t button11Pin = 15;
-const uint16_t buttonDebounceTime = 50;
+const uint16_t buttonDebounceTime = 25;
 const uint16_t analogResolution = 9; // 9 = 512 bit, 12 = 4095 bit
 const uint8_t analog1Pin = 35;
 const uint8_t analog2Pin = 34;
 const uint8_t analog3Pin = 39;
-const uint8_t analog4Pin = 36;
+const uint8_t batteryPin = 36;
+const uint8_t neoPixelPin = 16;
+const uint16_t PixelCount = 4;        // this example assumes 4 pixels, making it smaller will cause a failure
+const uint8_t PixelPin = neoPixelPin; // make sure to set this to the correct pin, ignored for Esp8266
 
 // Ez Buttons
 uint8_t button1State;
@@ -46,6 +53,69 @@ uint8_t button9State;
 uint8_t button10State;
 uint8_t button11State;
 
+// analog read task vars
+
+uint16_t knob1 = 0;
+uint16_t knob2 = 0;
+uint16_t knob3 = 0;
+uint16_t knob4 = 0;
+uint16_t lastKnob1 = 0;
+uint16_t lastKnob2 = 0;
+uint16_t lastKnob3 = 0;
+uint16_t lastKnob4 = 0;
+uint16_t stick1x = 0;
+uint16_t stick1y = 0;
+uint16_t stick2x = 0;
+uint16_t stick2y = 0;
+uint16_t stick3x = 0;
+uint16_t stick3y = 0;
+uint16_t stick4x = 0;
+uint16_t stick4y = 0;
+uint16_t lastStick1x = 0;
+uint16_t lastStick1y = 0;
+uint16_t lastStick2x = 0;
+uint16_t lastStick2y = 0;
+uint16_t lastStick3x = 0;
+uint16_t lastStick3y = 0;
+uint16_t lastStick4x = 0;
+uint16_t lastStick4y = 0;
+uint16_t mappedStick1x = 0;
+uint16_t mappedStick1y = 0;
+uint16_t mappedStick2x = 0;
+uint16_t mappedStick2y = 0;
+uint16_t mappedStick3x = 0;
+uint16_t mappedStick3y = 0;
+uint16_t mappedStick4x = 0;
+uint16_t mappedStick4y = 0;
+uint16_t lastMappedStick1x = 0;
+uint16_t lastMappedStick1y = 0;
+uint16_t lastMappedStick2x = 0;
+uint16_t lastMappedStick2y = 0;
+uint16_t lastMappedStick3x = 0;
+uint16_t lastMappedStick3y = 0;
+uint16_t lastMappedStick4x = 0;
+uint16_t lastMappedStick4y = 0;
+uint16_t batteryReading = 1;
+uint16_t lastBatteryReading = 0;
+uint16_t mappedKnob1 = 0;
+uint16_t mappedKnob2 = 0;
+uint16_t lastMappedKnob1 = 0;
+uint16_t lastMappedKnob2 = 0;
+
+String strStickReading;
+String strStickMqttOutMsg;
+String strStickReading1x;
+String strStickReading1y;
+String strStickReading2x;
+String strStickReading2y;
+String strStickReading3x;
+String strStickReading3y;
+String strStickReading4x;
+String strStickReading4y;
+String strKnobReading1;
+String strKnobReading2;
+String strKnobsOutMsg;
+
 // Serial receive vars
 const byte numChars = 100;
 char receivedChars[numChars]; // array to store received SERIAL chars
@@ -54,7 +124,58 @@ volatile bool newData = false;
 volatile bool newMqttMsg = false;
 bool mqttConnected = false;
 bool sendMqtt = true;
-bool readKnobs = false;
+bool readKnobs = true;
+bool stickPad1Active = true;
+bool stickPad2Active = false;
+bool pubStick1x = false;
+bool pubStick1y = false;
+bool pubStick2x = false;
+bool pubStick2y = false;
+bool pubStick3x = false;
+bool pubStick3y = false;
+bool pubStick4x = false;
+bool pubStick4y = false;
+bool pubKnob1 = false;
+bool pubKnob2 = false;
+
+NeoPixelBrightnessBus<NeoRgbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
+
+RgbColor red(colorSaturation, 0, 0);
+RgbColor green(0, colorSaturation, 0);
+RgbColor blue(0, 0, colorSaturation);
+RgbColor white(colorSaturation);
+RgbColor black(0);
+
+HslColor hslRed(red);
+HslColor hslGreen(green);
+HslColor hslBlue(blue);
+HslColor hslWhite(white);
+HslColor hslBlack(black);
+
+// taskrunner tasks
+void trBatteryTaskCb();
+void trBeaconTaskCb();
+
+Scheduler trRunner;
+
+Task trBatteryTask(10000, TASK_FOREVER, &trBatteryTaskCb);
+Task trBeaconTask(3000, TASK_FOREVER, &trBeaconTaskCb);
+// Task t3(5000, TASK_FOREVER, &t3Callback);
+
+// rtos tasks
+void otaTask(void *pvParameters);
+void mqttTask(void *pvParameters);
+void analogReadTask(void *pvParameters);
+void buttonTask(void *pvParameters);
+void taskRunnerTask(void *pvParameters);
+
+TaskHandle_t tOtaTask;
+TaskHandle_t tMqttTask;
+TaskHandle_t tAnalogReadTask;
+TaskHandle_t tButtonTask;
+TaskHandle_t tTaskRunnerTask;
+
+void handleMqttMsg();
 
 ezButton button1(button1Pin);
 ezButton button2(button2Pin);
@@ -71,20 +192,9 @@ ezButton button11(button11Pin);
 Adafruit_MCP3008 mcpAdc;
 
 SemaphoreHandle_t mqttSemaphore;
+SemaphoreHandle_t screenSemaphore;
 
-TaskHandle_t tOtaTask;
-TaskHandle_t tMqttTask;
-TaskHandle_t tAnalogReadTask;
-TaskHandle_t tButtonTask;
-
-void otaTask(void *pvParameters);
-void mqttTask(void *pvParameters);
-void analogReadTask(void *pvParameters);
-void buttonTask(void *pvParameters);
-
-void handleMqttMsg();
-
-// U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
 //  U8G2_SSD1306_128X64_ALT0_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // same as the NONAME variant, but may solve the "every 2nd line skipped" problem
 
 // const uint8_t SCL = 22;
@@ -96,7 +206,9 @@ void setup()
   Serial2.begin(9600);
   delay(1000);
   Serial.println("Begin--");
+  analogReadResolution(9);
   mqttSemaphore = xSemaphoreCreateMutex();
+  screenSemaphore = xSemaphoreCreateMutex();
   pinMode(button1Pin, INPUT_PULLUP);
   pinMode(button2Pin, INPUT_PULLUP);
   pinMode(button3Pin, INPUT_PULLUP);
@@ -108,6 +220,10 @@ void setup()
   pinMode(button9Pin, INPUT_PULLUP);
   pinMode(button10Pin, INPUT_PULLUP);
   pinMode(button11Pin, INPUT_PULLUP);
+  pinMode(batteryPin, INPUT);
+  pinMode(analog1Pin, INPUT);
+  pinMode(analog2Pin, INPUT);
+  pinMode(analog3Pin, INPUT);
   button1.setDebounceTime(buttonDebounceTime);
   button2.setDebounceTime(buttonDebounceTime);
   button3.setDebounceTime(buttonDebounceTime);
@@ -119,14 +235,33 @@ void setup()
   button9.setDebounceTime(buttonDebounceTime);
   button10.setDebounceTime(buttonDebounceTime);
   button11.setDebounceTime(buttonDebounceTime);
+  strip.Begin();
+    // // turn off the pixels
+  strip.SetPixelColor(0, black);
+  strip.SetPixelColor(1, black);
+  strip.SetPixelColor(2, black);
+  strip.SetPixelColor(3, black);
+  strip.SetBrightness(4);
+  strip.Show();
   mcpAdc.begin();
-  // u8g2.begin();
+  u8g2.begin();
   scan_wifi();
   WiFi.setSleep(false);
   setup_wifi();
   WiFi.setSleep(false);
+  strip.SetPixelColor(0, red);
+  strip.Show();
+  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.firstPage();
+  do
+  {
+    u8g2.setCursor(15, 25);
+    // u8g2.print(F("Hello World!"));
+
+    u8g2.println(strCurrentSSID);
+    u8g2.println(strCurrentRSSI);
+  } while (u8g2.nextPage());
   delay(1000);
-  //  showDisplay();
 
   // Tasks
   // Start OTA task
@@ -135,7 +270,7 @@ void setup()
       "ota_Task",
       4096,
       NULL,
-      2,
+      1,
       &tOtaTask,
       APP_CPU);
   // Start mqtt task
@@ -165,101 +300,81 @@ void setup()
       1,
       &tAnalogReadTask,
       APP_CPU);
+  xTaskCreatePinnedToCore(
+      taskRunnerTask,
+      "task_runner_task",
+      4096,
+      NULL,
+      1,
+      &tTaskRunnerTask,
+      APP_CPU);
 }
 
 void loop()
 {
-  yield();
-  delay(5000);
-
+  taskYIELD();
+  delay(10000);
 } // end loop
+
+void taskRunnerTask(void *pvParameters)
+{
+  trRunner.init();
+  trRunner.addTask(trBeaconTask);
+  trRunner.addTask(trBatteryTask);
+  trRunner.enableAll();
+  for (;;)
+  {
+    trRunner.execute();
+    taskYIELD();
+  }
+}
 
 void analogReadTask(void *pvParameters)
 {
-  uint16_t knob1;
-  uint16_t knob2;
-  uint16_t knob3;
-  uint16_t knob4;
-  uint16_t lastKnob1 = 0;
-  uint16_t lastKnob2 = 0;
-  uint16_t lastKnob3 = 0;
-  uint16_t lastKnob4 = 0;
-  uint16_t stick1x;
-  uint16_t stick1y;
-  uint16_t stick2x;
-  uint16_t stick2y;
-  uint16_t stick3x;
-  uint16_t stick3y;
-  uint16_t stick4x;
-  uint16_t stick4y;
-  uint16_t lastStick1x = 0;
-  uint16_t lastStick1y = 0;
-  uint16_t lastStick2x = 0;
-  uint16_t lastStick2y = 0;
-  uint16_t lastStick3x = 0;
-  uint16_t lastStick3y = 0;
-  uint16_t lastStick4x = 0;
-  uint16_t lastStick4y = 0;
-  uint16_t mappedStick1x = 0;
-  uint16_t mappedStick1y = 0;
-  uint16_t mappedStick2x = 0;
-  uint16_t mappedStick2y = 0;
-  uint16_t mappedStick3x = 0;
-  uint16_t mappedStick3y = 0;
-  uint16_t mappedStick4x = 0;
-  uint16_t mappedStick4y = 0;
-  uint16_t lastMappedStick1x = 0;
-  uint16_t lastMappedStick1y = 0;
-  uint16_t lastMappedStick2x = 0;
-  uint16_t lastMappedStick2y = 0;
-  uint16_t lastMappedStick3x = 0;
-  uint16_t lastMappedStick3y = 0;
-  uint16_t lastMappedStick4x = 0;
-  uint16_t lastMappedStick4y = 0;
-  bool pubStick1x = false;
-  bool pubStick1y = false;
-  bool pubStick2x = false;
-  bool pubStick2y = false;
-  bool pubStick3x = false;
-  bool pubStick3y = false;
-  bool pubStick4x = false;
-  bool pubStick4y = false;
-  String strStickReading;
-  String strStickMqttOutMsg;
-  String strStickReading1x;
-  String strStickReading1y;
-  String strStickReading2x;
-  String strStickReading2y;
-  String strStickReading3x;
-  String strStickReading3y;
-  String strStickReading4x;
-  String strStickReading4y;
   for (;;)
   {
-    if (readKnobs)
+    knob1 = analogRead(analog3Pin);
+    knob2 = analogRead(analog2Pin);
+    if ((knob1 - lastKnob1 > 5) || (lastKnob1 - knob1 > 5))
     {
-      knob1 = analogRead(analog1Pin);
-      knob2 = analogRead(analog2Pin);
-      knob3 = analogRead(analog3Pin);
-      knob4 = analogRead(analog4Pin);
+      mappedKnob1 = map(knob1, 0, 512, 0, 100);
+      if (mappedKnob1 != lastMappedKnob1)
+      {
+        pubKnob1 = true;
+        lastMappedKnob1 = mappedKnob1;
+        strKnobReading1 = mappedKnob1;
+      }
+      lastKnob1 = knob1;
     }
-    stick1x = mcpAdc.readADC(3);
-    delay(1);
-    stick1y = mcpAdc.readADC(2);
-    delay(1);
-    stick2x = mcpAdc.readADC(0);
-    delay(1);
-    stick2y = mcpAdc.readADC(1);
-    delay(1);
+    if ((knob2 - lastKnob2 > 5) || (lastKnob2 - knob2 > 5))
+    {
+      mappedKnob2 = map(knob2, 0, 512, 0, 100);
+      if (mappedKnob2 != lastMappedKnob2)
+      {
+        pubKnob2 = true;
+        lastMappedKnob2 = mappedKnob2;
+        strKnobReading2 = mappedKnob2;
+      }
+      lastKnob2 = knob2;
+    }
+    stick1x = mcpAdc.readADC(2);
+    delay(2);
+    stick1y = mcpAdc.readADC(3);
+    delay(2);
+    stick2x = mcpAdc.readADC(1);
+    delay(2);
+    stick2y = mcpAdc.readADC(0);
+    delay(2);
     stick3x = mcpAdc.readADC(4);
-    delay(1);
+    delay(2);
     stick3y = mcpAdc.readADC(5);
-    delay(1);
+    delay(2);
     stick4x = mcpAdc.readADC(7);
-    delay(1);
+    delay(2);
     stick4y = mcpAdc.readADC(6);
-    delay(1);
-    if (stick1x != lastStick1x)
+    delay(2);
+
+    if ((stick1x - lastStick1x > 5) || (lastStick1x - stick1x > 5))
     {
       mappedStick1x = map(stick1x, 0, 1023, 0, 99);
       lastStick1x = stick1x;
@@ -270,7 +385,7 @@ void analogReadTask(void *pvParameters)
         pubStick1x = true;
       }
     }
-    if (stick1y != lastStick1y)
+    if ((stick1y - lastStick1y > 5) || (lastStick1y - stick1y > 5))
     {
       mappedStick1y = map(stick1y, 0, 1023, 0, 99);
       lastStick1y = stick1y;
@@ -281,12 +396,18 @@ void analogReadTask(void *pvParameters)
         pubStick1y = true;
       }
     }
-    if (stick2x != lastStick2x)
+    if ((stick2x - lastStick2x > 5) || (lastStick2x - stick2x > 5))
     {
       mappedStick2x = map(stick2x, 0, 1023, 0, 99);
       lastStick2x = stick2x;
+      if (mappedStick2x != lastMappedStick2x)
+      {
+        strStickReading2x = mappedStick2x;
+        lastMappedStick2x = mappedStick2x;
+        pubStick2x = true;
+      }
     }
-    if (stick2y != lastStick2y)
+    if ((stick2y - lastStick2y > 5) || (lastStick1x - stick2y > 5))
     {
       mappedStick2y = map(stick2y, 0, 1023, 0, 99);
       lastStick2y = stick2y;
@@ -297,7 +418,7 @@ void analogReadTask(void *pvParameters)
         pubStick2y = true;
       }
     }
-    if (stick3x != lastStick3x)
+    if ((stick3x - lastStick3x > 5) || (lastStick3x - stick3x > 5))
     {
       mappedStick3x = map(stick3x, 0, 1023, 0, 99);
       lastStick3x = stick3x;
@@ -308,7 +429,7 @@ void analogReadTask(void *pvParameters)
         pubStick3x = true;
       }
     }
-    if (stick3y != lastStick3y)
+    if ((stick3y - lastStick3y > 5) || (lastStick3y - stick3y > 5))
     {
       mappedStick3y = map(stick3y, 0, 1023, 0, 99);
       lastStick3y = stick3y;
@@ -320,7 +441,7 @@ void analogReadTask(void *pvParameters)
         pubStick3y = true;
       }
     }
-    if (stick4x != lastStick4x)
+    if ((stick4x - lastStick4x > 5) || (lastStick4x - stick4x > 5))
     {
       mappedStick4x = map(stick4x, 0, 1023, 0, 99);
       lastStick4x = stick4x;
@@ -331,7 +452,7 @@ void analogReadTask(void *pvParameters)
         pubStick4x = true;
       }
     }
-    if (stick4y != lastStick4y)
+    if ((stick4y - lastStick4y > 5) || (lastStick4y - stick4y > 5))
     {
       mappedStick4y = map(stick4y, 0, 1023, 0, 99);
       lastStick4y = stick4y;
@@ -342,8 +463,19 @@ void analogReadTask(void *pvParameters)
         pubStick4y = true;
       }
     }
-
     xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
+    if (pubKnob1)
+    {
+      strKnobsOutMsg = "kn1:" + strKnobReading1;
+      myPublish(knobsTopic, strKnobsOutMsg);
+      pubKnob1 = false;
+    }
+    if (pubKnob2)
+    {
+      strKnobsOutMsg = "kn2:" + strKnobReading2;
+      myPublish(knobsTopic, strKnobsOutMsg);
+      pubKnob2 = false;
+    }
     if (pubStick1x)
     {
       strStickMqttOutMsg = "s1x:" + strStickReading1x;
@@ -393,6 +525,8 @@ void analogReadTask(void *pvParameters)
       pubStick4y = false;
     }
     xSemaphoreGive(mqttSemaphore);
+    taskYIELD();
+    vTaskDelay(pdTICKS_TO_MS(25));
   }
 }
 
@@ -402,7 +536,7 @@ void otaTask(void *pvParameters)
   for (;;)
   {
     otaServer.handleClient();
-    yield();
+    taskYIELD();
   }
 }
 
@@ -449,6 +583,7 @@ void buttonTask(void *pvParameters)
     if (button1.isPressed())
     {
       strButtMqttOutMsg = "b1:d";
+
     }
     // if (button1.isReleased())
     // {
@@ -499,9 +634,11 @@ void buttonTask(void *pvParameters)
       xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
       myPublish(buttonsTopic, strButtMqttOutMsg);
       xSemaphoreGive(mqttSemaphore);
+      strButtMqttOutMsg = "x";
       // Serial1.println(strMqttMessage);
     }
-    vTaskDelay(pdMS_TO_TICKS(50));
+    taskYIELD();
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
@@ -516,15 +653,70 @@ void mqttTask(void *pvParameters)
       handleMqttMsg();
       newMqttInMsg = false;
     }
-    yield();
+    taskYIELD();
     // vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
+void trBatteryTaskCb()
+{
+  batteryReading = analogRead(batteryPin);
+  if (batteryReading != lastBatteryReading)
+  {
+    // xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
+    // myPublish(batteryTopic, batteryReading);
+    // xSemaphoreGive(mqttSemaphore);
+    xSemaphoreTake(screenSemaphore, portMAX_DELAY);
+    u8g2.setFont(u8g2_font_ncenB14_tr);
+    u8g2.firstPage();
+    do
+    {
+      u8g2.setCursor(15, 50);
+      // u8g2.print(F("Hello World!"));
+
+      u8g2.println("Batt: ");
+      u8g2.println(batteryReading);
+    } while (u8g2.nextPage());
+    xSemaphoreGive(screenSemaphore);
+  }
+  lastBatteryReading = batteryReading;
+  if (batteryReading < 230)
+  {
+    strip.SetPixelColor(0, red);
+    strip.Show();
+  }
+}
+
+void trBeaconTaskCb()
+{
+  xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
+  myPublish(beaconTopic, "online");
+  xSemaphoreGive(mqttSemaphore);
+  // xSemaphoreTake(screenSemaphore, portMAX_DELAY);
+  // u8g2.setFont(u8g2_font_ncenB14_tr);
+  // u8g2.firstPage();
+  // do
+  // {
+  //   u8g2.setCursor(15, 25);
+  //   // u8g2.print(F("Hello World!"));
+  //   strCurrentSSID = WiFi.SSID();
+  //   strCurrentRSSI = WiFi.RSSI();
+  //   u8g2.println(strCurrentSSID);
+  //   u8g2.println(strCurrentRSSI);
+  // } while (u8g2.nextPage());
+  // xSemaphoreGive(screenSemaphore);
+}
+
 void handleMqttMsg()
 {
-  myPublish(statusTopic, mqttInTopic);
-  myPublish(statusTopic, mqttInMessage);
+  // myPublish(statusTopic, mqttInTopic);
+  // myPublish(statusTopic, mqttInMessage);
+  if (mqttInMessage == "RESET")
+  {
+    myPublish("Resetting now");
+    delay(1000);
+    ESP.restart();
+  }
 }
 
 // Serial.print("MOSI Pin: ");
@@ -557,3 +749,43 @@ void handleMqttMsg()
 // const int numreadingsY1 = 5;
 // const int numreadingsX2 = 5;
 // const int numreadingsY2 = 5;
+
+ // strip.SetPixelColor(0, red);
+  // strip.SetPixelColor(1, green);
+  // strip.SetPixelColor(2, blue);
+  // //strip.SetPixelColor(3, white);
+  // strip.SetBrightness(8);
+  // strip.Show();
+
+
+  // Serial.println("Off ...");
+
+  // // turn off the pixels
+  // strip.SetPixelColor(0, black);
+  // strip.SetPixelColor(1, black);
+  // strip.SetPixelColor(2, black);
+  // strip.SetPixelColor(3, black);
+  // strip.Show();
+
+  // delay(5000);
+
+  // Serial.println("HSL Colors R, G, B, W...");
+
+  // // set the colors,
+  // // if they don't match in order, you may need to use NeoGrbFeature feature
+  // strip.SetPixelColor(0, hslRed);
+  // strip.SetPixelColor(1, hslGreen);
+  // strip.SetPixelColor(2, hslBlue);
+  // strip.SetPixelColor(3, hslWhite);
+  // // strip.Show();
+
+  // delay(5000);
+
+  // Serial.println("Off again...");
+
+  // // turn off the pixels
+  // strip.SetPixelColor(0, hslBlack);
+  // strip.SetPixelColor(1, hslBlack);
+  // strip.SetPixelColor(2, hslBlack);
+  // strip.SetPixelColor(3, hslBlack);
+  // strip.Show();
