@@ -46,6 +46,7 @@ const char *knobsTopic = "robots/remote1/output/knobs";
 const char *configTopic = "robots/remote1/config";
 const char *beaconTopic = "robots/remote1/beacon";
 const char *batteryTopic = "robots/remote1/battery";
+const char *truckTeleTopic = "robots/truck/telemetry";
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -141,6 +142,7 @@ void setup_wifi()
         delay(2000);
         Serial.println("Connecting...");
     }
+    WiFi.setSleep(WIFI_PS_NONE);
     ip = WiFi.localIP();
     strThisIP = WiFi.localIP().toString();
     Serial.println(ip);

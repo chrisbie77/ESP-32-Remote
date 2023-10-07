@@ -8,202 +8,22 @@
 #include <my_esp32_ota.h>
 #include <Adafruit_MCP3008.h>
 #include <TaskScheduler.h>
-#include <NeoPixelBrightnessBus.h> 
+#include <NeoPixelBrightnessBus.h>
 #include <SPI.h>
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
+#include <main.h>
 #include <my_wifi.h>
 
-#define colorSaturation 128
 #define APP_CPU 1
 #define PRO_CPU 0
-
-const uint16_t button1Pin = 12;
-const uint16_t button2Pin = 14;
-const uint16_t button3Pin = 27;
-const uint16_t button4Pin = 26;
-const uint16_t button5Pin = 25;
-const uint16_t button6Pin = 32;
-const uint16_t button7Pin = 33;
-const uint16_t button8Pin = 4;
-const uint16_t button9Pin = 0;
-const uint16_t button10Pin = 2;
-const uint16_t button11Pin = 15;
-const uint16_t buttonDebounceTime = 25;
-const uint16_t analogResolution = 9; // 9 = 512 bit, 12 = 4095 bit
-const uint8_t analog1Pin = 35;
-const uint8_t analog2Pin = 34;
-const uint8_t analog3Pin = 39;
-const uint8_t batteryPin = 36;
-const uint8_t neoPixelPin = 16;
-const uint16_t PixelCount = 4;        // this example assumes 4 pixels, making it smaller will cause a failure
-const uint8_t PixelPin = neoPixelPin; // make sure to set this to the correct pin, ignored for Esp8266
-
-// Ez Buttons
-uint8_t button1State;
-uint8_t button2State;
-uint8_t button3State;
-uint8_t button4State;
-uint8_t button5State;
-uint8_t button6State;
-uint8_t button7State;
-uint8_t button8State;
-uint8_t button9State;
-uint8_t button10State;
-uint8_t button11State;
-
-// analog read task vars
-
-uint16_t knob1 = 0;
-uint16_t knob2 = 0;
-uint16_t knob3 = 0;
-uint16_t knob4 = 0;
-uint16_t lastKnob1 = 0;
-uint16_t lastKnob2 = 0;
-uint16_t lastKnob3 = 0;
-uint16_t lastKnob4 = 0;
-uint16_t stick1x = 0;
-uint16_t stick1y = 0;
-uint16_t stick2x = 0;
-uint16_t stick2y = 0;
-uint16_t stick3x = 0;
-uint16_t stick3y = 0;
-uint16_t stick4x = 0;
-uint16_t stick4y = 0;
-uint16_t lastStick1x = 0;
-uint16_t lastStick1y = 0;
-uint16_t lastStick2x = 0;
-uint16_t lastStick2y = 0;
-uint16_t lastStick3x = 0;
-uint16_t lastStick3y = 0;
-uint16_t lastStick4x = 0;
-uint16_t lastStick4y = 0;
-uint16_t mappedStick1x = 0;
-uint16_t mappedStick1y = 0;
-uint16_t mappedStick2x = 0;
-uint16_t mappedStick2y = 0;
-uint16_t mappedStick3x = 0;
-uint16_t mappedStick3y = 0;
-uint16_t mappedStick4x = 0;
-uint16_t mappedStick4y = 0;
-uint16_t lastMappedStick1x = 0;
-uint16_t lastMappedStick1y = 0;
-uint16_t lastMappedStick2x = 0;
-uint16_t lastMappedStick2y = 0;
-uint16_t lastMappedStick3x = 0;
-uint16_t lastMappedStick3y = 0;
-uint16_t lastMappedStick4x = 0;
-uint16_t lastMappedStick4y = 0;
-uint16_t batteryReading = 1;
-uint16_t lastBatteryReading = 0;
-uint16_t mappedKnob1 = 0;
-uint16_t mappedKnob2 = 0;
-uint16_t lastMappedKnob1 = 0;
-uint16_t lastMappedKnob2 = 0;
-
-String strStickReading;
-String strStickMqttOutMsg;
-String strStickReading1x;
-String strStickReading1y;
-String strStickReading2x;
-String strStickReading2y;
-String strStickReading3x;
-String strStickReading3y;
-String strStickReading4x;
-String strStickReading4y;
-String strKnobReading1;
-String strKnobReading2;
-String strKnobsOutMsg;
-
-// Serial receive vars
-const byte numChars = 100;
-char receivedChars[numChars]; // array to store received SERIAL chars
-
-volatile bool newData = false;
-volatile bool newMqttMsg = false;
-bool mqttConnected = false;
-bool sendMqtt = true;
-bool readKnobs = true;
-bool stickPad1Active = true;
-bool stickPad2Active = false;
-bool pubStick1x = false;
-bool pubStick1y = false;
-bool pubStick2x = false;
-bool pubStick2y = false;
-bool pubStick3x = false;
-bool pubStick3y = false;
-bool pubStick4x = false;
-bool pubStick4y = false;
-bool pubKnob1 = false;
-bool pubKnob2 = false;
-
-NeoPixelBrightnessBus<NeoRgbFeature, Neo800KbpsMethod> strip(PixelCount, PixelPin);
-
-RgbColor red(colorSaturation, 0, 0);
-RgbColor green(0, colorSaturation, 0);
-RgbColor blue(0, 0, colorSaturation);
-RgbColor white(colorSaturation);
-RgbColor black(0);
-
-HslColor hslRed(red);
-HslColor hslGreen(green);
-HslColor hslBlue(blue);
-HslColor hslWhite(white);
-HslColor hslBlack(black);
-
-// taskrunner tasks
-void trBatteryTaskCb();
-void trBeaconTaskCb();
-
-Scheduler trRunner;
-
-Task trBatteryTask(10000, TASK_FOREVER, &trBatteryTaskCb);
-Task trBeaconTask(3000, TASK_FOREVER, &trBeaconTaskCb);
-// Task t3(5000, TASK_FOREVER, &t3Callback);
-
-// rtos tasks
-void otaTask(void *pvParameters);
-void mqttTask(void *pvParameters);
-void analogReadTask(void *pvParameters);
-void buttonTask(void *pvParameters);
-void taskRunnerTask(void *pvParameters);
-
-TaskHandle_t tOtaTask;
-TaskHandle_t tMqttTask;
-TaskHandle_t tAnalogReadTask;
-TaskHandle_t tButtonTask;
-TaskHandle_t tTaskRunnerTask;
-
-void handleMqttMsg();
-
-ezButton button1(button1Pin);
-ezButton button2(button2Pin);
-ezButton button3(button3Pin);
-ezButton button4(button4Pin);
-ezButton button5(button5Pin);
-ezButton button6(button6Pin);
-ezButton button7(button7Pin);
-ezButton button8(button8Pin);
-ezButton button9(button9Pin);
-ezButton button10(button10Pin);
-ezButton button11(button11Pin);
-
-Adafruit_MCP3008 mcpAdc;
-
-SemaphoreHandle_t mqttSemaphore;
-SemaphoreHandle_t screenSemaphore;
-
-U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);
-//  U8G2_SSD1306_128X64_ALT0_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // same as the NONAME variant, but may solve the "every 2nd line skipped" problem
-
-// const uint8_t SCL = 22;
-// const uint8_t SDA = 21;
+#define LOCAL_BATTERY_MODE 0
+#define REMOTE_BATTERY_MODE 1
 
 void setup()
 {
-  Serial.begin(115200);
-  Serial2.begin(9600);
+  Serial.begin(9600);
   delay(1000);
   Serial.println("Begin--");
   analogReadResolution(9);
@@ -246,9 +66,7 @@ void setup()
   mcpAdc.begin();
   u8g2.begin();
   scan_wifi();
-  WiFi.setSleep(false);
   setup_wifi();
-  WiFi.setSleep(false);
   strip.SetPixelColor(0, red);
   strip.Show();
   u8g2.setFont(u8g2_font_ncenB14_tr);
@@ -277,7 +95,7 @@ void setup()
   xTaskCreatePinnedToCore(
       mqttTask,
       "mqtt_task",
-      4096,
+      8192,
       NULL,
       1,
       &tMqttTask,
@@ -303,7 +121,7 @@ void setup()
   xTaskCreatePinnedToCore(
       taskRunnerTask,
       "task_runner_task",
-      4096,
+      8192,
       NULL,
       1,
       &tTaskRunnerTask,
@@ -358,21 +176,21 @@ void analogReadTask(void *pvParameters)
       lastKnob2 = knob2;
     }
     stick1x = mcpAdc.readADC(2);
-    delay(2);
+    //delay(2);
     stick1y = mcpAdc.readADC(3);
-    delay(2);
+    //delay(2);
     stick2x = mcpAdc.readADC(1);
-    delay(2);
+    //delay(2);
     stick2y = mcpAdc.readADC(0);
-    delay(2);
+    //delay(2);
     stick3x = mcpAdc.readADC(4);
-    delay(2);
+    //delay(2);
     stick3y = mcpAdc.readADC(5);
-    delay(2);
+    //delay(2);
     stick4x = mcpAdc.readADC(7);
-    delay(2);
+    //delay(2);
     stick4y = mcpAdc.readADC(6);
-    delay(2);
+    //delay(2);
 
     if ((stick1x - lastStick1x > 5) || (lastStick1x - stick1x > 5))
     {
@@ -407,7 +225,7 @@ void analogReadTask(void *pvParameters)
         pubStick2x = true;
       }
     }
-    if ((stick2y - lastStick2y > 5) || (lastStick1x - stick2y > 5))
+    if ((stick2y - lastStick2y > 5) || (lastStick2y - stick2y > 5))
     {
       mappedStick2y = map(stick2y, 0, 1023, 0, 99);
       lastStick2y = stick2y;
@@ -545,18 +363,6 @@ void buttonTask(void *pvParameters)
   String strButtMqttOutMsg;
   for (;;)
   {
-    /*
-     * Created by ArduinoGetStarted.com
-     *
-     * This example code is in the public domain
-     *
-     * Tutorial page: https://arduinogetstarted.com/tutorials/arduino-button-library
-     *
-     * This example:
-     *   + uses debounce for a button.
-     *   + reads state of a button
-     *   + detects the pressed and released events of a button
-     */
     strButtMqttOutMsg = "x";
     button1.loop();
     button2.loop();
@@ -583,7 +389,6 @@ void buttonTask(void *pvParameters)
     if (button1.isPressed())
     {
       strButtMqttOutMsg = "b1:d";
-
     }
     // if (button1.isReleased())
     // {
@@ -638,7 +443,7 @@ void buttonTask(void *pvParameters)
       // Serial1.println(strMqttMessage);
     }
     taskYIELD();
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -649,9 +454,12 @@ void mqttTask(void *pvParameters)
     mqttClient.loop();
     if (newMqttInMsg == true)
     {
-      // myPublish("Got the mqtt message in mqtt task");
-      handleMqttMsg();
+      if (strMqttTopic == truckTeleTopic)
+      {
+        strScreenLine2 = strMqttMessage;
+      }
       newMqttInMsg = false;
+      newScreenMessage = true;
     }
     taskYIELD();
     // vTaskDelay(pdMS_TO_TICKS(100));
@@ -663,28 +471,24 @@ void trBatteryTaskCb()
   batteryReading = analogRead(batteryPin);
   if (batteryReading != lastBatteryReading)
   {
-    // xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
-    // myPublish(batteryTopic, batteryReading);
-    // xSemaphoreGive(mqttSemaphore);
+    mappedBatteryReading = map(batteryReading, 220, 290, 0, 100);
     xSemaphoreTake(screenSemaphore, portMAX_DELAY);
     u8g2.setFont(u8g2_font_ncenB14_tr);
     u8g2.firstPage();
     do
     {
-      u8g2.setCursor(15, 50);
-      // u8g2.print(F("Hello World!"));
-
-      u8g2.println("Batt: ");
-      u8g2.println(batteryReading);
+      //u8g2.setCursor(15, 30);
+      //u8g2.println(strCurrentSSID);
+      //u8g2.println("  ");
+      u8g2.println(strCurrentRSSI);
+      u8g2.setCursor(15, 30);
+      u8g2.println("B1: ");
+      u8g2.println(mappedBatteryReading);
+      u8g2.println("%");
     } while (u8g2.nextPage());
     xSemaphoreGive(screenSemaphore);
   }
   lastBatteryReading = batteryReading;
-  if (batteryReading < 230)
-  {
-    strip.SetPixelColor(0, red);
-    strip.Show();
-  }
 }
 
 void trBeaconTaskCb()
@@ -692,100 +496,12 @@ void trBeaconTaskCb()
   xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
   myPublish(beaconTopic, "online");
   xSemaphoreGive(mqttSemaphore);
-  // xSemaphoreTake(screenSemaphore, portMAX_DELAY);
-  // u8g2.setFont(u8g2_font_ncenB14_tr);
-  // u8g2.firstPage();
-  // do
-  // {
-  //   u8g2.setCursor(15, 25);
-  //   // u8g2.print(F("Hello World!"));
-  //   strCurrentSSID = WiFi.SSID();
-  //   strCurrentRSSI = WiFi.RSSI();
-  //   u8g2.println(strCurrentSSID);
-  //   u8g2.println(strCurrentRSSI);
-  // } while (u8g2.nextPage());
-  // xSemaphoreGive(screenSemaphore);
 }
 
-void handleMqttMsg()
+void trScreenUpdateTaskCb()
 {
-  // myPublish(statusTopic, mqttInTopic);
-  // myPublish(statusTopic, mqttInMessage);
-  if (mqttInMessage == "RESET")
-  {
-    myPublish("Resetting now");
-    delay(1000);
-    ESP.restart();
-  }
+  ;
 }
 
-// Serial.print("MOSI Pin: ");
-// Serial.println(MOSI);
-// Serial.print("MISO Pin: ");
-// Serial.println(MISO);
-// Serial.print("SCK Pin: ");
-// Serial.println(SCK);
-// Serial.print("SS Pin: ");
-// Serial.println(SS);
-
-// Averaging analog read vars
-// int XreadIndex1 = 0; // the index of the current reading
-// int YreadIndex1 = 0;
-// int totalX1 = 0; // the running total
-// int totalY1 = 0;
-// int averageX1 = 0; // the average
-// int averageY1 = 0;
-// int readingsX1[numreadingsX1]; // the readingsX1 from the analog input
-// int readingsY1[numreadingsY1];
-// int XreadIndex2 = 0; // the index of the current reading
-// int YreadIndex2 = 0;
-// int totalX2 = 0; // the running total
-// int totalY2 = 0;
-// int averageX2 = 0; // the average
-// int averageY2 = 0;
-// int readingsX2[numreadingsX2]; // the readingsX2 from the analog input
-// int readingsY2[numreadingsY2];
-// const int numreadingsX1 = 5;
-// const int numreadingsY1 = 5;
-// const int numreadingsX2 = 5;
-// const int numreadingsY2 = 5;
-
- // strip.SetPixelColor(0, red);
-  // strip.SetPixelColor(1, green);
-  // strip.SetPixelColor(2, blue);
-  // //strip.SetPixelColor(3, white);
-  // strip.SetBrightness(8);
-  // strip.Show();
 
 
-  // Serial.println("Off ...");
-
-  // // turn off the pixels
-  // strip.SetPixelColor(0, black);
-  // strip.SetPixelColor(1, black);
-  // strip.SetPixelColor(2, black);
-  // strip.SetPixelColor(3, black);
-  // strip.Show();
-
-  // delay(5000);
-
-  // Serial.println("HSL Colors R, G, B, W...");
-
-  // // set the colors,
-  // // if they don't match in order, you may need to use NeoGrbFeature feature
-  // strip.SetPixelColor(0, hslRed);
-  // strip.SetPixelColor(1, hslGreen);
-  // strip.SetPixelColor(2, hslBlue);
-  // strip.SetPixelColor(3, hslWhite);
-  // // strip.Show();
-
-  // delay(5000);
-
-  // Serial.println("Off again...");
-
-  // // turn off the pixels
-  // strip.SetPixelColor(0, hslBlack);
-  // strip.SetPixelColor(1, hslBlack);
-  // strip.SetPixelColor(2, hslBlack);
-  // strip.SetPixelColor(3, hslBlack);
-  // strip.Show();
