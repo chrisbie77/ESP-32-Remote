@@ -102,8 +102,10 @@ String strStickReading4y;
 String strKnobReading1;
 String strKnobReading2;
 String strKnobsOutMsg;
-String strScreenLine1;
-String strScreenLine2;
+String strScreenLine1 = "Line1";
+String strScreenLine2 = "Line2";
+String strButtMqttOutMsg;
+String strBatteryReading = "x";
 
 const byte numChars = 100;
 
@@ -163,24 +165,23 @@ U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
 
 // taskrunner tasks
 void trBatteryTaskCb();
-void trBeaconTaskCb();
 void trScreenUpdateTaskCb();
 
 Scheduler trRunner;
 
 Task trBatteryTask(10000, TASK_FOREVER, &trBatteryTaskCb);
-Task trBeaconTask(3000, TASK_FOREVER, &trBeaconTaskCb);
-Task trScreenUpdateTask(1000, TASK_FOREVER, &trScreenUpdateTaskCb);
+//Task trBeaconTask(3000, TASK_FOREVER, &trBeaconTaskCb);
+Task trScreenUpdateTask(500, TASK_FOREVER, &trScreenUpdateTaskCb);
 
 // rtos tasks
 void otaTask(void *pvParameters);
 void mqttTask(void *pvParameters);
 void analogReadTask(void *pvParameters);
-void buttonTask(void *pvParameters);
+//void buttonTask(void *pvParameters);
 void taskRunnerTask(void *pvParameters);
 
 TaskHandle_t tOtaTask;
 TaskHandle_t tMqttTask;
 TaskHandle_t tAnalogReadTask;
-TaskHandle_t tButtonTask;
+//TaskHandle_t tButtonTask;
 TaskHandle_t tTaskRunnerTask;

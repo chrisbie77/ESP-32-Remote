@@ -56,7 +56,7 @@ void setup()
   button10.setDebounceTime(buttonDebounceTime);
   button11.setDebounceTime(buttonDebounceTime);
   strip.Begin();
-    // // turn off the pixels
+  // // turn off the pixels
   strip.SetPixelColor(0, black);
   strip.SetPixelColor(1, black);
   strip.SetPixelColor(2, black);
@@ -69,7 +69,7 @@ void setup()
   setup_wifi();
   strip.SetPixelColor(0, red);
   strip.Show();
-  u8g2.setFont(u8g2_font_ncenB14_tr);
+  u8g2.setFont(u8g2_font_8bitclassic_tr);
   u8g2.firstPage();
   do
   {
@@ -79,71 +79,66 @@ void setup()
     u8g2.println(strCurrentSSID);
     u8g2.println(strCurrentRSSI);
   } while (u8g2.nextPage());
-  delay(1000);
+
+  trRunner.addTask(trBatteryTask);
+  trRunner.addTask(trScreenUpdateTask);
+  trRunner.enableAll();
+  delay(100);
 
   // Tasks
   // Start OTA task
-  xTaskCreatePinnedToCore(
+  xTaskCreate(
       otaTask,
       "ota_Task",
       4096,
       NULL,
       1,
-      &tOtaTask,
-      APP_CPU);
+      &tOtaTask);
+  // APP_CPU);
   // Start mqtt task
-  xTaskCreatePinnedToCore(
+  xTaskCreate(
       mqttTask,
       "mqtt_task",
-      8192,
+      8128,
       NULL,
       1,
-      &tMqttTask,
-      APP_CPU);
-  // Start button task
-  xTaskCreatePinnedToCore(
-      buttonTask,
-      "button_task",
-      4096,
-      NULL,
-      1,
-      &tButtonTask,
-      APP_CPU);
+      &tMqttTask);
+  //     APP_CPU);
   // Start analog read task
-  xTaskCreatePinnedToCore(
+  xTaskCreate(
       analogReadTask,
       "analog_read_task",
-      4096,
+      8128,
       NULL,
       1,
-      &tAnalogReadTask,
-      APP_CPU);
-  xTaskCreatePinnedToCore(
+      &tAnalogReadTask);
+  //     APP_CPU);
+  xTaskCreate(
       taskRunnerTask,
       "task_runner_task",
-      8192,
+      8128,
       NULL,
       1,
-      &tTaskRunnerTask,
-      APP_CPU);
+      &tTaskRunnerTask);
+  //     APP_CPU);
 }
 
 void loop()
 {
-  taskYIELD();
+  // taskYIELD();
+  // vTaskDelay(pdMS_TO_TICKS(60000));
+  vTaskDelay(1000);
   delay(10000);
 } // end loop
 
 void taskRunnerTask(void *pvParameters)
 {
-  trRunner.init();
-  trRunner.addTask(trBeaconTask);
-  trRunner.addTask(trBatteryTask);
-  trRunner.enableAll();
   for (;;)
   {
     trRunner.execute();
-    taskYIELD();
+    // vTaskDelay(pdTICKS_TO_MS(100));
+    // taskYIELD();
+    vTaskDelay(10);
   }
 }
 
@@ -151,6 +146,7 @@ void analogReadTask(void *pvParameters)
 {
   for (;;)
   {
+    xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
     knob1 = analogRead(analog3Pin);
     knob2 = analogRead(analog2Pin);
     if ((knob1 - lastKnob1 > 5) || (lastKnob1 - knob1 > 5))
@@ -176,21 +172,21 @@ void analogReadTask(void *pvParameters)
       lastKnob2 = knob2;
     }
     stick1x = mcpAdc.readADC(2);
-    //delay(2);
+    // delay(2);
     stick1y = mcpAdc.readADC(3);
-    //delay(2);
+    // delay(2);
     stick2x = mcpAdc.readADC(1);
-    //delay(2);
+    // delay(2);
     stick2y = mcpAdc.readADC(0);
-    //delay(2);
+    // delay(2);
     stick3x = mcpAdc.readADC(4);
-    //delay(2);
+    // delay(2);
     stick3y = mcpAdc.readADC(5);
-    //delay(2);
+    // delay(2);
     stick4x = mcpAdc.readADC(7);
-    //delay(2);
+    // delay(2);
     stick4y = mcpAdc.readADC(6);
-    //delay(2);
+    // delay(2);
 
     if ((stick1x - lastStick1x > 5) || (lastStick1x - stick1x > 5))
     {
@@ -281,7 +277,6 @@ void analogReadTask(void *pvParameters)
         pubStick4y = true;
       }
     }
-    xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
     if (pubKnob1)
     {
       strKnobsOutMsg = "kn1:" + strKnobReading1;
@@ -342,27 +337,6 @@ void analogReadTask(void *pvParameters)
       myPublish(sticksTopic, strStickMqttOutMsg);
       pubStick4y = false;
     }
-    xSemaphoreGive(mqttSemaphore);
-    taskYIELD();
-    vTaskDelay(pdTICKS_TO_MS(25));
-  }
-}
-
-void otaTask(void *pvParameters)
-{
-  startOtaServer();
-  for (;;)
-  {
-    otaServer.handleClient();
-    taskYIELD();
-  }
-}
-
-void buttonTask(void *pvParameters)
-{
-  String strButtMqttOutMsg;
-  for (;;)
-  {
     strButtMqttOutMsg = "x";
     button1.loop();
     button2.loop();
@@ -436,14 +410,24 @@ void buttonTask(void *pvParameters)
     }
     if ((sendMqtt) && (strButtMqttOutMsg != "x"))
     {
-      xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
       myPublish(buttonsTopic, strButtMqttOutMsg);
-      xSemaphoreGive(mqttSemaphore);
       strButtMqttOutMsg = "x";
-      // Serial1.println(strMqttMessage);
     }
-    taskYIELD();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    xSemaphoreGive(mqttSemaphore);
+    // taskYIELD();
+    // vTaskDelay(pdTICKS_TO_MS(25));
+    vTaskDelay(10);
+  }
+}
+
+void otaTask(void *pvParameters)
+{
+  startOtaServer();
+  for (;;)
+  {
+    otaServer.handleClient();
+    vTaskDelay(10);
+    // taskYIELD();
   }
 }
 
@@ -461,47 +445,65 @@ void mqttTask(void *pvParameters)
       newMqttInMsg = false;
       newScreenMessage = true;
     }
-    taskYIELD();
+    // taskYIELD();
     // vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(10);
   }
 }
 
 void trBatteryTaskCb()
 {
+  strCurrentRSSI = WiFi.RSSI();
+  if (strCurrentRSSI != strLastRSSI)
+  {
+    newScreenMessage = true;
+    strLastRSSI = strCurrentRSSI;
+  }
   batteryReading = analogRead(batteryPin);
   if (batteryReading != lastBatteryReading)
   {
     mappedBatteryReading = map(batteryReading, 220, 290, 0, 100);
-    xSemaphoreTake(screenSemaphore, portMAX_DELAY);
-    u8g2.setFont(u8g2_font_ncenB14_tr);
-    u8g2.firstPage();
-    do
-    {
-      //u8g2.setCursor(15, 30);
-      //u8g2.println(strCurrentSSID);
-      //u8g2.println("  ");
-      u8g2.println(strCurrentRSSI);
-      u8g2.setCursor(15, 30);
-      u8g2.println("B1: ");
-      u8g2.println(mappedBatteryReading);
-      u8g2.println("%");
-    } while (u8g2.nextPage());
-    xSemaphoreGive(screenSemaphore);
+    // xSemaphoreTake(screenSemaphore, portMAX_DELAY);
+    // u8g2.setFont(u8g2_font_ncenB14_tr);
+    // u8g2.firstPage();
+    // do
+    // {
+    //   //u8g2.setCursor(15, 30);
+    //   //u8g2.println(strCurrentSSID);
+    //   //u8g2.println("  ");
+    //   u8g2.println(strCurrentRSSI);
+    //   u8g2.setCursor(15, 30);
+    //   u8g2.println("B1: ");
+    //   u8g2.println(mappedBatteryReading);
+    //   u8g2.println("%");
+    // } while (u8g2.nextPage());
+    // xSemaphoreGive(screenSemaphore);
+    lastBatteryReading = batteryReading;
+    strBatteryReading = mappedBatteryReading;
+    newScreenMessage = true;
   }
-  lastBatteryReading = batteryReading;
-}
-
-void trBeaconTaskCb()
-{
-  xSemaphoreTake(mqttSemaphore, portMAX_DELAY);
-  myPublish(beaconTopic, "online");
-  xSemaphoreGive(mqttSemaphore);
 }
 
 void trScreenUpdateTaskCb()
 {
-  ;
+  if (newScreenMessage)
+  {
+    strScreenLine1 = strCurrentRSSI;
+    strScreenLine1 += "db   ";
+    strScreenLine1 += strBatteryReading;
+    strScreenLine1 += "%";
+    xSemaphoreTake(screenSemaphore, portMAX_DELAY);
+    u8g2.setFont(u8g2_font_8bitclassic_tr);
+    u8g2.firstPage();
+    do
+    {
+      u8g2.setCursor(5, 20);
+      u8g2.println(strScreenLine1);
+      u8g2.setCursor(5, 50);
+      u8g2.println(strScreenLine2);
+
+    } while (u8g2.nextPage());
+    xSemaphoreGive(screenSemaphore);
+    newScreenMessage = false;
+  }
 }
-
-
-

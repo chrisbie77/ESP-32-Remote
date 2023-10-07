@@ -5,9 +5,10 @@ char ssid[16];
 
 const char *password = "csd1977jld1939ejd1938";
 
-String strCurrentSSID;
-String strCurrentRSSI;
-String strThisIP;
+String strCurrentSSID = "x";
+String strCurrentRSSI = "x";
+String strLastRSSI = "x";
+String strThisIP = "x";
 
 IPAddress ip;
 IPAddress local_IP(192, 168, 0, 40);
